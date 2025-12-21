@@ -102,17 +102,16 @@ export async function GET() {
 
     // Estimate minimum gas needed (rough estimate: 200k gas for delegation redemption)
     const estimatedGas = 200000n;
-    const estimatedGasCost = feeData?.maxFeePerGas 
+    const estimatedGasCostWei = feeData?.maxFeePerGas 
       ? estimatedGas * feeData.maxFeePerGas 
       : estimatedGas * 20000000000n; // Fallback: 20 gwei
 
+    // Convert to number (ETH) for comparisons and messaging to avoid BigInt mixing
     const toEth = (wei: bigint) => Number(wei) / 1e18;
-    const bufferWei = (estimatedGasCost * 12n) / 10n; // 20% buffer, BigInt math only
-    
     const balanceEth = toEth(balance);
-    const estimatedGasCostEth = toEth(estimatedGasCost);
-    const requiredEth = toEth(bufferWei);
-    const isLowBalance = balance < bufferWei;
+    const estimatedGasCostEth = toEth(estimatedGasCostWei);
+    const requiredEth = estimatedGasCostEth * 1.2; // 20% buffer
+    const isLowBalance = balanceEth < requiredEth;
 
     // Return only the public address and balance (never the private key)
     return NextResponse.json({

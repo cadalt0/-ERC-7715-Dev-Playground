@@ -48,22 +48,25 @@ export async function POST(request: NextRequest) {
     // Estimate minimum gas needed (rough estimate: 200k gas for delegation redemption)
     const estimatedGas = 200000n;
     const feeData = await publicClient.estimateFeesPerGas().catch(() => null);
-    const estimatedGasCost = feeData?.maxFeePerGas 
+    const estimatedGasCostWei = feeData?.maxFeePerGas 
       ? estimatedGas * feeData.maxFeePerGas 
       : estimatedGas * 20000000000n; // Fallback: 20 gwei
 
+    // Convert to number (ETH) for comparisons and messaging to avoid BigInt mixing
     const toEth = (wei: bigint) => Number(wei) / 1e18;
-    const requiredWei = (estimatedGasCost * 12n) / 10n; // 20% buffer, all BigInt
+    const estimatedGasCostEth = toEth(estimatedGasCostWei);
+    const requiredEth = estimatedGasCostEth * 1.2; // 20% buffer in number space
+    const sessionBalanceEth = toEth(sessionBalance);
 
-    if (sessionBalance < estimatedGasCost) {
+    if (sessionBalanceEth < estimatedGasCostEth) {
       return NextResponse.json(
         {
           error: 'Insufficient ETH in session account for gas fees',
           details: {
             sessionAccount: sessionAccount.address,
-            balance: `${toEth(sessionBalance).toFixed(6)} ETH`,
-            estimatedGasCost: `${toEth(estimatedGasCost).toFixed(6)} ETH`,
-            required: `${toEth(requiredWei).toFixed(6)} ETH (with 20% buffer)`,
+            balance: `${sessionBalanceEth.toFixed(6)} ETH`,
+            estimatedGasCost: `${estimatedGasCostEth.toFixed(6)} ETH`,
+            required: `${requiredEth.toFixed(6)} ETH (with 20% buffer)`,
           },
         },
         { status: 400 }
