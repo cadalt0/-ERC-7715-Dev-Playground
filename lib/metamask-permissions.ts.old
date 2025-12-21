@@ -1,0 +1,648 @@
+'use client';
+
+import { createWalletClient, createPublicClient, custom, http, parseUnits, encodeFunctionData } from 'viem';
+import { sepolia as chain } from 'viem/chains';
+import { privateKeyToAccount } from 'viem/accounts';
+import { erc7715ProviderActions } from '@metamask/smart-accounts-kit/actions';
+import {
+  getSmartAccountsEnvironment,
+  toMetaMaskSmartAccount,
+  Implementation,
+  createExecution,
+  ExecutionMode,
+  redeemDelegations,
+} from '@metamask/smart-accounts-kit';
+import { decodePermissionContexts } from '@metamask/smart-accounts-kit/utils';
+
+// USDC address on Ethereum Sepolia (from MetaMask docs)
+const USDC_SEPOLIA = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+
+// Minimal ERC-20 ABI for transfer, used when redeeming permissions
+const ERC20_ABI = [
+  {
+    type: 'function',
+    name: 'transfer',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: 'success', type: 'bool' }],
+  },
+] as const;
+
+/**
+ * Get DelegationManager address for a given chain
+ * This is needed to deploy PermissionRedeemer contract
+ * 
+ * @param chainId - Chain ID (e.g., sepolia.id = 11155111)
+ * @returns DelegationManager contract address
+ */
+export function getDelegationManagerAddress(chainId: number): string {
+  const environment = getSmartAccountsEnvironment(chainId);
+  return environment.DelegationManager;
+}
+
+/**
+ * Wrap ethereum provider to add missing methods for viem compatibility
+ */
+function wrapEthereumProvider(provider: any) {
+  if (!provider) return provider;
+  
+  // If provider already has addListener, return as-is
+  if (provider.addListener && provider.removeListener) {
+    return provider;
+  }
+  
+  // Create a wrapped provider that adds missing methods
+  return new Proxy(provider, {
+    get(target, prop) {
+      if (prop === 'addListener' && !target.addListener) {
+        return target.on || (() => {});
+      }
+      if (prop === 'removeListener' && !target.removeListener) {
+        return target.off || (() => {});
+      }
+      return target[prop as keyof typeof target];
+    },
+  });
+}
+
+/**
+ * Step 1: Set up Wallet Client
+ * Creates a Viem Wallet Client extended with erc7715ProviderActions
+ * Exactly as per MetaMask docs Step 1
+ */
+function setupWalletClient() {
+  if (typeof window === 'undefined' || !window.ethereum) {
+    throw new Error('MetaMask Flask (window.ethereum) not found. Please install MetaMask Flask.');
+  }
+
+  // Check if Flask has ERC-7715 middleware enabled
+  // The middleware should be available if Flask 13.5.0+ is properly installed
+  try {
+    const wrappedProvider = wrapEthereumProvider(window.ethereum);
+    const walletClient = createWalletClient({
+      transport: custom(wrappedProvider),
+    }).extend(erc7715ProviderActions());
+
+    // Verify the extension worked
+    if (typeof walletClient.requestExecutionPermissions !== 'function') {
+      throw new Error(
+        'ERC-7715 middleware not configured in MetaMask Flask. ' +
+        'Please ensure Flask 13.5.0+ is installed and restart Flask completely.'
+      );
+    }
+
+    return walletClient;
+  } catch (error: any) {
+    if (error?.message?.includes('no middleware configured') || error?.message?.includes('not supported')) {
+      throw new Error(
+        'MetaMask Flask ERC-7715 middleware is not configured. ' +
+        'Please: 1) Restart MetaMask Flask completely, 2) Refresh this page, 3) Ensure Flask 13.5.0+ is installed. ' +
+        'The "no middleware configured" error means Flask needs to be restarted to enable ERC-7715 support.'
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Connect Wallet - Exported function
+ * Step 1: Set up Wallet Client exactly as per docs
+ * Then requests addresses (connection happens here as per Step 4 in docs)
+ */
+export async function connectWallet() {
+  if (typeof window === 'undefined') {
+    throw new Error('This function must be called in the browser.');
+  }
+
+  if (!window.ethereum) {
+    throw new Error('MetaMask Flask (window.ethereum) not found. Please install MetaMask Flask extension.');
+  }
+
+  try {
+    // Step 1: Set up Wallet Client exactly as per docs
+    // IMPORTANT: Must extend with erc7715ProviderActions() to enable requestExecutionPermissions
+    const wrappedProvider = wrapEthereumProvider(window.ethereum);
+    const walletClient = createWalletClient({
+      transport: custom(wrappedProvider),
+    }).extend(erc7715ProviderActions());
+
+    // Verify the extension worked - check if requestExecutionPermissions exists
+    if (typeof walletClient.requestExecutionPermissions !== 'function') {
+      throw new Error(
+        'Failed to extend wallet client with erc7715ProviderActions(). ' +
+        'The "no middleware configured" error means MetaMask Flask ERC-7715 middleware is not enabled. ' +
+        'Try: 1) Restart MetaMask Flask, 2) Refresh the page, 3) Make sure Flask 13.5.0+ is installed.'
+      );
+    }
+
+    // Step 4: Check EOA account code - connection happens here via requestAddresses()
+    // This is exactly as shown in the docs Step 4
+    const addresses = await walletClient.requestAddresses();
+    const address = addresses[0];
+
+    if (!address) {
+      throw new Error('No accounts found. Please connect your MetaMask Flask wallet.');
+    }
+
+    return {
+      address,
+      walletClient, // Return the extended wallet client for later use
+    };
+  } catch (error: any) {
+    console.error('Connect wallet error:', error);
+    
+    if (error?.code === 4001) {
+      throw new Error('User rejected the connection request. Please approve the connection in MetaMask Flask.');
+    }
+    
+    if (error?.message) {
+      throw error;
+    }
+    
+    throw new Error(`Failed to connect wallet: ${error?.message || String(error)}`);
+  }
+}
+
+/**
+ * Step 1.5: Connect Wallet (internal)
+ * Requests connection to MetaMask Flask and gets user's address
+ */
+async function connectWalletInternal(
+  walletClient: ReturnType<typeof setupWalletClient>
+) {
+  try {
+    // Request addresses - this will prompt user to connect if not already connected
+    const addresses = await walletClient.requestAddresses();
+    
+    if (!addresses || addresses.length === 0) {
+      throw new Error('No accounts found. Please connect your MetaMask Flask wallet.');
+    }
+
+    return addresses[0];
+  } catch (error: any) {
+    if (error?.code === 4001) {
+      throw new Error('User rejected the connection request. Please connect your wallet to continue.');
+    }
+    throw new Error(`Failed to connect wallet: ${error?.message || String(error)}`);
+  }
+}
+
+/**
+ * Step 2: Set up Public Client
+ * Creates a Viem Public Client exactly as per MetaMask docs
+ */
+function setupPublicClient() {
+  // Use reliable RPC endpoint with fallback
+  const customRpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
+  const rpcUrl = customRpcUrl || 'https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161';
+  
+  const publicClient = createPublicClient({
+    chain,
+    transport: http(rpcUrl, {
+      timeout: 10000, // 10 second timeout
+      retryCount: 2,
+      retryDelay: 1000,
+    }),
+  });
+
+  return publicClient;
+}
+
+/**
+ * Step 3: Set up Session Account (EOA)
+ * Creates an EOA session account exactly as per MetaMask docs
+ * Using privateKeyToAccount from viem/accounts
+ */
+function setupSessionAccount(privateKey: string) {
+  // Exactly as shown in docs: const sessionAccount = privateKeyToAccount("0x...");
+  const sessionAccount = privateKeyToAccount(privateKey as `0x${string}`);
+  return sessionAccount;
+}
+
+/**
+ * Create a session account object from address only (for permission requests)
+ * Private key is not needed for requesting permissions, only for redeeming
+ */
+function createSessionAccountFromAddress(address: string) {
+  // Create a minimal account object with just the address
+  // This is sufficient for permission requests
+  return {
+    address: address as `0x${string}`,
+  } as any;
+}
+
+/**
+ * Step 4: Check EOA account code
+ * Checks if user account is upgraded to MetaMask Smart Account
+ * Exactly as per MetaMask docs Step 4
+ * 
+ * Note: With MetaMask Flask 13.9.0+, Advanced Permissions support automatically 
+ * upgrading a user's account. If code is empty (EOA), the upgrade will happen 
+ * automatically when requesting permissions.
+ */
+async function checkAccountUpgrade(
+  publicClient: ReturnType<typeof setupPublicClient>,
+  userAddress: string
+) {
+  try {
+    // Ensure address is a valid string
+    if (!userAddress || typeof userAddress !== 'string') {
+      throw new Error('Invalid address provided');
+    }
+
+    // Get the EOA account code - exactly as per docs
+    const code = await publicClient.getCode({
+      address: userAddress as `0x${string}`,
+    });
+
+    if (code && code !== '0x') {
+      // The address to which EOA has delegated. According to EIP-7702, 0xef0100 || address
+      // represents the delegation.
+      // You need to remove the first 8 characters (0xef0100) to get the delegator address.
+      const delegatorAddress = `0x${code.substring(8)}`;
+
+      const statelessDelegatorAddress = getSmartAccountsEnvironment(chain.id)
+        .implementations.EIP7702StatelessDeleGatorImpl;
+
+      // Check if account is upgraded to MetaMask smart account
+      const isAccountUpgraded =
+        delegatorAddress.toLowerCase() === statelessDelegatorAddress.toLowerCase();
+
+      return {
+        address: userAddress,
+        isAccountUpgraded,
+        delegatorAddress,
+      };
+    }
+
+    // If no code (EOA), with Flask 13.9.0+ the upgrade will happen automatically
+    // So we return isAccountUpgraded as true to allow the flow to continue
+    // The actual upgrade will happen when requesting permissions
+    return {
+      address: userAddress,
+      isAccountUpgraded: true, // Allow flow to continue - upgrade happens automatically in Flask 13.9.0+
+      delegatorAddress: null,
+    };
+  } catch (error) {
+    console.error('Error checking account upgrade:', error);
+    throw error;
+  }
+}
+
+/**
+ * Step 5: Request Advanced Permissions
+ * Requests ERC-20 periodic transfer permission
+ * Exactly as per MetaMask docs Step 5
+ */
+async function requestPermission(
+  walletClient: ReturnType<typeof setupWalletClient>,
+  sessionAccount: ReturnType<typeof setupSessionAccount>
+) {
+  // Verify wallet client has requestExecutionPermissions method
+  if (typeof walletClient.requestExecutionPermissions !== 'function') {
+    throw new Error(
+      'Wallet client does not have requestExecutionPermissions method. ' +
+      'Make sure the wallet client is extended with erc7715ProviderActions() and MetaMask Flask 13.5.0+ is installed. ' +
+      'Error: "no middleware configured" usually means MetaMask Flask needs to be restarted or the extension needs to be updated.'
+    );
+  }
+
+  // Current time in seconds
+  const currentTime = Math.floor(Date.now() / 1000);
+  // 1 week from now
+  const expiry = currentTime + 604800;
+
+  // Request Advanced Permissions - exactly as per docs Step 5
+  try {
+    const grantedPermissions = await walletClient.requestExecutionPermissions([
+      {
+        chainId: chain.id,
+        expiry,
+        signer: {
+          type: 'account',
+          data: {
+            // The requested permissions will be granted to the session account
+            address: sessionAccount.address,
+          },
+        },
+        permission: {
+          type: 'erc20-token-periodic',
+          data: {
+            tokenAddress: USDC_SEPOLIA,
+            // 10 USDC in WEI format. Since USDC has 6 decimals, 10 * 10^6
+            periodAmount: parseUnits('10', 6),
+            // 1 day in seconds
+            periodDuration: 86400,
+            justification: 'Permission to transfer 10 USDC every day',
+          },
+        },
+        isAdjustmentAllowed: true,
+      },
+    ]);
+
+    return grantedPermissions[0];
+  } catch (error: any) {
+    // Handle the "no middleware configured" error specifically
+    const errorMessage = error?.message || String(error) || '';
+    const errorDetails = error?.details || '';
+    
+    if (errorMessage.includes('no middleware configured') || 
+        errorMessage.includes('not supported') ||
+        errorMessage.includes('wallet_requestExecutionPermissions') ||
+        errorDetails.includes('no middleware configured')) {
+      throw new Error(
+        'MetaMask Flask ERC-7715 middleware is not configured. ' +
+        'The "no middleware configured" error means Flask needs to be restarted to enable ERC-7715 support. ' +
+        'Please: 1) Completely close MetaMask Flask (not just minimize), 2) Restart Flask, 3) Refresh this page, ' +
+        '4) Ensure Flask 13.5.0+ is installed. The middleware must be initialized when Flask starts.'
+      );
+    }
+    // Re-throw other errors
+    throw error;
+  }
+}
+
+/**
+ * Main function: Request USDC Periodic Permission
+ * Follows the complete flow from MetaMask Smart Accounts Kit documentation
+ */
+export async function requestUsdcPermission(
+  sessionAccountAddress: string, 
+  walletClient?: ReturnType<typeof setupWalletClient>,
+  userAddress?: string
+) {
+  // Step 1: Set up Wallet Client (if not provided)
+  // MUST be extended with erc7715ProviderActions() for requestExecutionPermissions to work
+  const client = walletClient || setupWalletClient();
+  
+  // Verify the client has requestExecutionPermissions method
+  if (typeof client.requestExecutionPermissions !== 'function') {
+    throw new Error(
+      'Wallet client not properly extended with erc7715ProviderActions(). ' +
+      'Make sure MetaMask Flask 13.5.0+ is installed and the wallet client is properly configured.'
+    );
+  }
+
+  // Step 2: Set up Public Client
+  const publicClient = setupPublicClient();
+
+  // Step 3: Set up Session Account (EOA) - only need address for permission requests
+  // Private key is only needed for redeeming, not for requesting permissions
+  const sessionAccount = createSessionAccountFromAddress(sessionAccountAddress);
+
+  // Step 4: Check the EOA account code - exactly as per docs Step 4
+  // Connection happens here via requestAddresses() if address not provided
+  let address: string;
+  if (userAddress) {
+    address = userAddress;
+  } else {
+    // Step 4 from docs: const addresses = await walletClient.requestAddresses();
+    const addresses = await client.requestAddresses();
+    address = addresses[0];
+    if (!address) {
+      throw new Error('No MetaMask account connected');
+    }
+  }
+
+  // Step 4 continued: Get the EOA account code (exactly as per docs)
+  const accountCheck = await checkAccountUpgrade(publicClient, address);
+
+  // With Flask 13.9.0+, if account is not upgraded, it will be upgraded automatically
+  // when requesting permissions. So we allow the flow to continue.
+  // Only throw error if we explicitly detect it's not the right delegator (older Flask version)
+  if (accountCheck.delegatorAddress && !accountCheck.isAccountUpgraded) {
+    throw new Error(
+      'User account is not upgraded to MetaMask Smart Account. ' +
+        'Please upgrade the account in MetaMask Flask or use MetaMask Flask 13.9.0+ which supports automatic upgrade.'
+    );
+  }
+
+  // Step 5: Request Advanced Permissions
+  const grantedPermission = await requestPermission(client, sessionAccount);
+
+  return {
+    success: true,
+    sessionAccount: {
+      address: sessionAccount.address,
+    },
+    userAccount: {
+      address: accountCheck.address,
+      isUpgraded: accountCheck.isAccountUpgraded,
+    },
+    permission: {
+      // Hex-encoded permissions context returned by MetaMask
+      permissionsContext: (grantedPermission as any).permissionsContext ?? (grantedPermission as any).context,
+      delegationManager: grantedPermission.signerMeta?.delegationManager,
+    },
+    message: 'Permission granted! You can now redeem this permission to execute transfers.',
+  };
+}
+
+/**
+ * Deploy Smart Account Manually
+ * Gets factory args from the smart account and deploys using a relay account
+ * The relay account can be an EOA or another smart account (this example uses an EOA)
+ * 
+ * @param userAccountPrivateKey - Private key of the user's account (for signer)
+ * @param relayAccountPrivateKey - Private key of the relay account that will sponsor the deployment
+ * @param implementation - Smart account implementation type (default: MultiSig)
+ * @param deployParams - Deployment parameters (required for MultiSig/Hybrid, not for Stateless7702)
+ * @param deploySalt - Salt for deployment (optional, for Stateless7702)
+ * @param walletClient - Optional wallet client (if not provided, will create one)
+ * @returns Transaction hash of the deployment
+ */
+export async function deploySmartAccountManually(
+  userAccountPrivateKey: string,
+  relayAccountPrivateKey: string,
+  implementation: Implementation = Implementation.MultiSig,
+  deployParams?: { signers?: string[]; threshold?: bigint } | { owner?: string; keyIds?: string[]; xValues?: bigint[]; yValues?: bigint[] },
+  deploySalt?: `0x${string}`,
+  walletClient?: ReturnType<typeof setupWalletClient>
+) {
+  if (typeof window === 'undefined') {
+    throw new Error('This function must be called in the browser.');
+  }
+
+  // Step 1: Set up clients
+  const client = walletClient || setupWalletClient();
+  const publicClient = setupPublicClient();
+
+  // Step 2: Create user account from private key (for signer)
+  const userAccount = privateKeyToAccount(userAccountPrivateKey as `0x${string}`);
+
+  // Step 3: Create relay account from private key
+  const relayAccount = privateKeyToAccount(relayAccountPrivateKey as `0x${string}`);
+
+  // Step 4: Create smart account instance with appropriate parameters
+  let smartAccountParams: any = {
+    client: publicClient,
+    implementation,
+    signer: {
+      account: userAccount,
+    },
+    environment: getSmartAccountsEnvironment(chain.id),
+  };
+
+  // Add deployment parameters based on implementation
+  if (implementation === Implementation.MultiSig) {
+    if (!deployParams || !('signers' in deployParams) || !deployParams.signers || !deployParams.threshold) {
+      throw new Error('MultiSig requires deployParams with signers array and threshold');
+    }
+    smartAccountParams.deployParams = [
+      deployParams.signers.map(s => s as `0x${string}`),
+      deployParams.threshold,
+    ];
+  } else if (implementation === Implementation.Hybrid) {
+    if (!deployParams || !('owner' in deployParams) || !deployParams.owner || !deployParams.keyIds) {
+      throw new Error('Hybrid requires deployParams with owner, keyIds, xValues, and yValues');
+    }
+    smartAccountParams.deployParams = [
+      deployParams.owner as `0x${string}`,
+      deployParams.keyIds,
+      deployParams.xValues || [],
+      deployParams.yValues || [],
+    ];
+  } else if (implementation === Implementation.Stateless7702) {
+    // For Stateless7702, use deploySalt if provided, otherwise use address
+    if (deploySalt) {
+      smartAccountParams.deploySalt = deploySalt;
+    } else {
+      smartAccountParams.address = userAccount.address;
+    }
+  }
+
+  const smartAccount = await toMetaMaskSmartAccount(smartAccountParams);
+
+  // Step 5: Get factory args
+  const { factory, factoryData } = await smartAccount.getFactoryArgs();
+
+  // Step 6: Deploy smart account using relay account
+  // Create a wallet client for the relay account
+  const relayWalletClient = createWalletClient({
+    account: relayAccount,
+    chain,
+    transport: http(),
+  });
+
+  const hash = await relayWalletClient.sendTransaction({
+    to: factory,
+    data: factoryData,
+  });
+
+  return {
+    success: true,
+    transactionHash: hash,
+    factory,
+    factoryData,
+    smartAccountAddress: await smartAccount.getAddress(),
+    userAccountAddress: userAccount.address,
+    relayAccountAddress: relayAccount.address,
+    implementation,
+    message: `Smart account deployment transaction sent. Hash: ${hash}`,
+  };
+}
+
+/**
+ * Redeem an ERC-20 periodic USDC permission.
+ *
+ * This executes a USDC `transfer` under a previously granted ERC-7715 permission.
+ * The permission is already signed when it is granted via MetaMask, so no new
+ * signature is required here.
+ *
+ * @param permissionsContextHex - The permissionsContext hex string returned from requestExecutionPermissions
+ * @param delegationManagerAddress - DelegationManager address (from grantedPermission.signerMeta.delegationManager)
+ * @param sessionPrivateKey - Private key of the session account that received the permission
+ * @param recipient - Address that should receive the USDC
+ * @param amountUsdc - Amount of USDC to transfer (as a decimal string, e.g. "1.5")
+ */
+export async function redeemUsdcPermission(
+  permissionsContextHex: string | undefined,
+  delegationManagerAddress: string | undefined,
+  sessionPrivateKey: string,
+  recipient: string,
+  amountUsdc: string,
+) {
+  // Note: This function can be called from both browser and server (API routes)
+  // Removed window check to allow server-side execution
+
+  if (!delegationManagerAddress) {
+    throw new Error('DelegationManager address is required to redeem a permission.');
+  }
+
+  if (!permissionsContextHex) {
+    throw new Error('permissionsContext is required to redeem a permission.');
+  }
+
+  // Step 1: Set up clients
+  const publicClient = setupPublicClient();
+
+  // Step 2: Recreate the session account from its private key
+  const sessionAccount = setupSessionAccount(sessionPrivateKey);
+
+  // Wallet client that will actually send the redemption transaction
+  const sessionWalletClient = createWalletClient({
+    account: sessionAccount,
+    chain,
+    transport: http(),
+  });
+
+  // Step 3: Build the USDC transfer execution
+  const amountWei = parseUnits(amountUsdc, 6); // USDC has 6 decimals
+
+  const callData = encodeFunctionData({
+    abi: ERC20_ABI,
+    functionName: 'transfer',
+    args: [recipient as `0x${string}`, amountWei],
+  });
+
+  const execution = createExecution({
+    target: USDC_SEPOLIA as `0x${string}`,
+    value: 0n,
+    callData,
+  });
+
+  // Step 4: Decode the permissionsContext into Delegation[][]
+  const decodedContexts = decodePermissionContexts([permissionsContextHex as `0x${string}`]);
+  const [permissionContext] = decodedContexts;
+
+  // Step 5: Log gas estimation (for visibility - viem auto-estimates and adjusts gas automatically)
+  try {
+    const feeData = await publicClient.estimateFeesPerGas();
+    console.log('Auto-estimated gas prices (viem will use these automatically):', {
+      maxFeePerGas: feeData.maxFeePerGas?.toString() || 'N/A',
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString() || 'N/A',
+    });
+  } catch (error) {
+    console.warn('Gas price estimation failed (viem will auto-estimate):', error);
+  }
+
+  // Step 6: Redeem the permission via Smart Accounts Kit helper
+  // Gas is automatically estimated and adjusted by viem based on current network conditions
+  // No manual gas configuration needed - viem handles maxFeePerGas, maxPriorityFeePerGas automatically
+  const txHash = await redeemDelegations(
+    sessionWalletClient,
+    publicClient,
+    delegationManagerAddress as `0x${string}`,
+    [
+      {
+        permissionContext: permissionContext as any,
+        executions: [execution],
+        mode: ExecutionMode.SingleDefault,
+      },
+    ],
+  );
+
+  return {
+    success: true,
+    transactionHash: txHash,
+    recipient,
+    amountUsdc,
+    sessionAccountAddress: sessionAccount.address,
+    delegationManagerAddress,
+    message: `Redeem transaction sent. Hash: ${txHash}`,
+  };
+}
+
