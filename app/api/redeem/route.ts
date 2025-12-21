@@ -52,15 +52,18 @@ export async function POST(request: NextRequest) {
       ? estimatedGas * feeData.maxFeePerGas 
       : estimatedGas * 20000000000n; // Fallback: 20 gwei
 
+    const toEth = (wei: bigint) => Number(wei) / 1e18;
+    const requiredWei = (estimatedGasCost * 12n) / 10n; // 20% buffer, all BigInt
+
     if (sessionBalance < estimatedGasCost) {
       return NextResponse.json(
         {
           error: 'Insufficient ETH in session account for gas fees',
           details: {
             sessionAccount: sessionAccount.address,
-            balance: `${(Number(sessionBalance) / 1e18).toFixed(6)} ETH`,
-            estimatedGasCost: `${(Number(estimatedGasCost) / 1e18).toFixed(6)} ETH`,
-            required: `${(Number(estimatedGasCost * 120n / 100n) / 1e18).toFixed(6)} ETH (with 20% buffer)`,
+            balance: `${toEth(sessionBalance).toFixed(6)} ETH`,
+            estimatedGasCost: `${toEth(estimatedGasCost).toFixed(6)} ETH`,
+            required: `${toEth(requiredWei).toFixed(6)} ETH (with 20% buffer)`,
           },
         },
         { status: 400 }

@@ -105,10 +105,14 @@ export async function GET() {
     const estimatedGasCost = feeData?.maxFeePerGas 
       ? estimatedGas * feeData.maxFeePerGas 
       : estimatedGas * 20000000000n; // Fallback: 20 gwei
+
+    const toEth = (wei: bigint) => Number(wei) / 1e18;
+    const bufferWei = (estimatedGasCost * 12n) / 10n; // 20% buffer, BigInt math only
     
-    const balanceEth = Number(balance) / 1e18;
-    const estimatedGasCostEth = Number(estimatedGasCost) / 1e18;
-    const isLowBalance = balance < estimatedGasCost * 120n / 100n; // 20% buffer
+    const balanceEth = toEth(balance);
+    const estimatedGasCostEth = toEth(estimatedGasCost);
+    const requiredEth = toEth(bufferWei);
+    const isLowBalance = balance < bufferWei;
 
     // Return only the public address and balance (never the private key)
     return NextResponse.json({
@@ -120,7 +124,7 @@ export async function GET() {
       estimatedGasCostEth: estimatedGasCostEth.toFixed(6),
       isLowBalance,
       warning: isLowBalance 
-        ? `Low balance! Need at least ${(estimatedGasCostEth * 1.2).toFixed(6)} ETH for gas fees. Current: ${balanceEth.toFixed(6)} ETH`
+        ? `Low balance! Need at least ${requiredEth.toFixed(6)} ETH for gas fees. Current: ${balanceEth.toFixed(6)} ETH`
         : null,
     });
   } catch (error: any) {
