@@ -102,14 +102,14 @@ export async function GET() {
 
     // Estimate minimum gas needed (rough estimate: 200k gas for delegation redemption)
     const estimatedGas = 200000n;
-    const estimatedGasCostWei = feeData?.maxFeePerGas 
-      ? estimatedGas * feeData.maxFeePerGas 
-      : estimatedGas * 20000000000n; // Fallback: 20 gwei
+    const gasPriceWei = Number(feeData?.maxFeePerGas ?? 20000000000n); // fallback 20 gwei
+    const estimatedGasNumber = Number(estimatedGas); // 200000
+    const estimatedGasCostWeiNumber = gasPriceWei * estimatedGasNumber;
 
-    // Convert to number (ETH) for comparisons and messaging to avoid BigInt mixing
-    const toEth = (wei: bigint) => Number(wei) / 1e18;
-    const balanceEth = toEth(balance);
-    const estimatedGasCostEth = toEth(estimatedGasCostWei);
+    // Convert to number (ETH) for comparisons/messages
+    const toEthNum = (wei: number | bigint) => typeof wei === 'bigint' ? Number(wei) / 1e18 : wei / 1e18;
+    const balanceEth = toEthNum(balance);
+    const estimatedGasCostEth = toEthNum(estimatedGasCostWeiNumber);
     const requiredEth = estimatedGasCostEth * 1.2; // 20% buffer
     const isLowBalance = balanceEth < requiredEth;
 
@@ -119,7 +119,7 @@ export async function GET() {
       address: sessionAccount.address,
       balance: balance.toString(),
       balanceEth: balanceEth.toFixed(6),
-      estimatedGasCost: estimatedGasCost.toString(),
+      estimatedGasCost: estimatedGasCostWeiNumber.toString(),
       estimatedGasCostEth: estimatedGasCostEth.toFixed(6),
       isLowBalance,
       warning: isLowBalance 

@@ -11,7 +11,7 @@ export default function SessionAccountInfoDisplay({ sessionAccountInfo }: Sessio
     return null;
   }
 
-  const info = sessionAccountInfo as SessionAccountInfoExtended;
+  const info = sessionAccountInfo;
 
   return (
     <div style={{ marginBottom: '1rem' }}>

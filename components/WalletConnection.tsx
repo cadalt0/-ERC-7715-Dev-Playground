@@ -5,7 +5,7 @@ import { useWeb3AuthConnect, useWeb3AuthDisconnect } from '@web3auth/modal/react
 import { useAccount, useBalance } from 'wagmi';
 
 interface WalletConnectionProps {
-  onDisconnect: () => void;
+  onDisconnect?: () => void;
 }
 
 export default function WalletConnection({ onDisconnect }: WalletConnectionProps) {
@@ -18,7 +18,7 @@ export default function WalletConnection({ onDisconnect }: WalletConnectionProps
   const handleDisconnect = async () => {
     try {
       await disconnect();
-      onDisconnect();
+      onDisconnect?.();
       setShowDropdown(false);
     } catch (error: any) {
       console.error('Disconnect failed:', error);

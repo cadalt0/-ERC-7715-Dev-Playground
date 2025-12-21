@@ -3,7 +3,7 @@
 import WalletConnection from './WalletConnection';
 
 interface PlaygroundHeaderProps {
-  onDisconnect: () => void;
+  onDisconnect?: () => void;
 }
 
 export default function PlaygroundHeader({ onDisconnect }: PlaygroundHeaderProps) {

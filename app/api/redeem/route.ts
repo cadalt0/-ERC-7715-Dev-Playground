@@ -48,15 +48,15 @@ export async function POST(request: NextRequest) {
     // Estimate minimum gas needed (rough estimate: 200k gas for delegation redemption)
     const estimatedGas = 200000n;
     const feeData = await publicClient.estimateFeesPerGas().catch(() => null);
-    const estimatedGasCostWei = feeData?.maxFeePerGas 
-      ? estimatedGas * feeData.maxFeePerGas 
-      : estimatedGas * 20000000000n; // Fallback: 20 gwei
+    const gasPriceWei = Number(feeData?.maxFeePerGas ?? 20000000000n); // fallback 20 gwei
+    const estimatedGasNumber = Number(estimatedGas); // 200000
+    const estimatedGasCostWeiNumber = gasPriceWei * estimatedGasNumber;
 
-    // Convert to number (ETH) for comparisons and messaging to avoid BigInt mixing
-    const toEth = (wei: bigint) => Number(wei) / 1e18;
-    const estimatedGasCostEth = toEth(estimatedGasCostWei);
-    const requiredEth = estimatedGasCostEth * 1.2; // 20% buffer in number space
-    const sessionBalanceEth = toEth(sessionBalance);
+    // Convert to ETH in number space
+    const toEthNum = (wei: number | bigint) => typeof wei === 'bigint' ? Number(wei) / 1e18 : wei / 1e18;
+    const estimatedGasCostEth = toEthNum(estimatedGasCostWeiNumber);
+    const requiredEth = estimatedGasCostEth * 1.2; // 20% buffer
+    const sessionBalanceEth = toEthNum(sessionBalance);
 
     if (sessionBalanceEth < estimatedGasCostEth) {
       return NextResponse.json(
@@ -86,10 +86,7 @@ export async function POST(request: NextRequest) {
       tokenDecimals,
     );
 
-    return NextResponse.json({
-      success: true,
-      ...result,
-    });
+    return NextResponse.json(result);
   } catch (error: any) {
     // Log error without exposing sensitive data
     console.error('Redeem API error:', {

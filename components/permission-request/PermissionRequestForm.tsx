@@ -88,9 +88,11 @@ export default function PermissionRequestForm({
             onChange={(newToken) => {
               setToken(newToken);
               setIsCustomTokenSelected(
-                newToken.symbol === 'CUSTOM' || 
-                newToken.address === 'CUSTOM_PLACEHOLDER' ||
-                (newToken.address && !COMMON_TOKENS.find(t => t.address?.toLowerCase() === newToken.address?.toLowerCase()))
+                !!(
+                  newToken.symbol === 'CUSTOM' || 
+                  newToken.address === 'CUSTOM_PLACEHOLDER' ||
+                  (newToken.address && !COMMON_TOKENS.find(t => t.address?.toLowerCase() === newToken.address?.toLowerCase()))
+                )
               );
               // Update amount default when token changes (only if user hasn't modified it)
               if (amount === '0.001' || amount === '0.000000000000000001') {
