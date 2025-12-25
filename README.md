@@ -21,7 +21,7 @@ A playground for requesting and redeeming MetaMask Advanced Permissions (ERC-771
 ## Setup
 ```bash
 git clone https://github.com/cadalt0/-ERC-7715-Dev-Playground.git
-cd nextjs-app
+
 npm install
 ```
 
