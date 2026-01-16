@@ -164,25 +164,58 @@ export default function PermissionDetailsModal({
                 </div>
               </div>
 
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Amount</div>
-                <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-                  {config.amount}
+              {/* Periodic fields */}
+              {config.amount && (
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Amount (Period)</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+                    {config.amount}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Period Duration</div>
-                <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-                  {config.periodDuration} seconds
+              {config.periodDuration && (
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Period Duration</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+                    {config.periodDuration} seconds
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Stream fields */}
+              {config.amountPerSecond && (
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Amount Per Second</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+                    {config.amountPerSecond}
+                  </div>
+                </div>
+              )}
+
+              {config.initialAmount && (
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Initial Amount</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+                    {config.initialAmount}
+                  </div>
+                </div>
+              )}
+
+              {config.maxAmount && (
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Maximum Amount</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+                    {config.maxAmount}
+                  </div>
+                </div>
+              )}
 
               {config.startTime && (
                 <div>
                   <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Start Time</div>
                   <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-                    {config.startTime}
+                    {config.startTime} ({new Date(config.startTime * 1000).toLocaleString()})
                   </div>
                 </div>
               )}
@@ -190,7 +223,7 @@ export default function PermissionDetailsModal({
               <div>
                 <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' }}>Expiry</div>
                 <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#333', padding: '0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-                  {config.expiry}
+                  {config.expiry} ({new Date(config.expiry * 1000).toLocaleString()})
                 </div>
               </div>
             </div>

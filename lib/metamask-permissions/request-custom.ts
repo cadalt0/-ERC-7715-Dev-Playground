@@ -60,28 +60,62 @@ export async function requestCustomPermission(
   // Step 5: Request Advanced Permissions with custom config
   try {
     const currentTime = Math.floor(Date.now() / 1000);
-    const isNative = config.permissionType === 'native-token-periodic';
+    const isNative = config.permissionType === 'native-token-periodic' || config.permissionType === 'native-token-stream';
+    const isPeriodic = config.permissionType === 'native-token-periodic' || config.permissionType === 'erc20-token-periodic';
+    const isStream = config.permissionType === 'native-token-stream' || config.permissionType === 'erc20-token-stream';
 
     // Build permission data based on type
     let permissionData: any;
-    if (isNative) {
-      // Native token periodic permission
-      const periodAmount = parseEther(config.amount);
-      permissionData = {
-        periodAmount,
-        periodDuration: config.periodDuration,
-        startTime: config.startTime || currentTime,
-        justification: config.justification,
-      };
-    } else {
-      // ERC-20 token periodic permission
-      const periodAmount = parseUnits(config.amount, config.tokenDecimals);
-      permissionData = {
-        tokenAddress: config.tokenAddress!,
-        periodAmount,
-        periodDuration: config.periodDuration,
-        justification: config.justification,
-      };
+    
+    if (isPeriodic) {
+      // Periodic permissions (native or ERC-20)
+      if (isNative) {
+        // Native token periodic permission
+        const periodAmount = parseEther(config.amount!);
+        permissionData = {
+          periodAmount,
+          periodDuration: config.periodDuration!,
+          startTime: config.startTime || currentTime,
+          justification: config.justification,
+        };
+      } else {
+        // ERC-20 token periodic permission
+        const periodAmount = parseUnits(config.amount!, config.tokenDecimals);
+        permissionData = {
+          tokenAddress: config.tokenAddress!,
+          periodAmount,
+          periodDuration: config.periodDuration!,
+          justification: config.justification,
+        };
+      }
+    } else if (isStream) {
+      // Stream permissions (native or ERC-20)
+      if (isNative) {
+        // Native token stream permission
+        const amountPerSecondWei = parseEther(config.amountPerSecond!);
+        const initialAmountWei = parseEther(config.initialAmount!);
+        const maxAmountWei = parseEther(config.maxAmount!);
+        permissionData = {
+          amountPerSecond: amountPerSecondWei,
+          initialAmount: initialAmountWei,
+          maxAmount: maxAmountWei,
+          startTime: config.startTime || currentTime,
+          justification: config.justification,
+        };
+      } else {
+        // ERC-20 token stream permission
+        const amountPerSecondWei = parseUnits(config.amountPerSecond!, config.tokenDecimals);
+        const initialAmountWei = parseUnits(config.initialAmount!, config.tokenDecimals);
+        const maxAmountWei = parseUnits(config.maxAmount!, config.tokenDecimals);
+        permissionData = {
+          tokenAddress: config.tokenAddress!,
+          amountPerSecond: amountPerSecondWei,
+          initialAmount: initialAmountWei,
+          maxAmount: maxAmountWei,
+          startTime: config.startTime || currentTime,
+          justification: config.justification,
+        };
+      }
     }
 
     const grantedPermissions = await client.requestExecutionPermissions([
@@ -120,8 +154,14 @@ export async function requestCustomPermission(
       config: {
         permissionType: config.permissionType,
         tokenAddress: config.tokenAddress,
+        // Periodic fields
         amount: config.amount,
         periodDuration: config.periodDuration,
+        // Stream fields
+        amountPerSecond: config.amountPerSecond,
+        initialAmount: config.initialAmount,
+        maxAmount: config.maxAmount,
+        // Common fields
         startTime: config.startTime,
         expiry: config.expiry,
       },

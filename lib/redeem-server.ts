@@ -15,7 +15,7 @@ import { setupPublicClient, setupSessionAccount } from './metamask-permissions/u
 import { USDC_SEPOLIA, ERC20_ABI } from './metamask-permissions/constants';
 
 /**
- * Redeem a permission (supports both native ETH and ERC-20 tokens)
+ * Redeem a permission (supports native ETH, ERC-20 tokens, periodic and stream permissions)
  * This function can be called from API routes
  */
 export async function redeemPermission(
@@ -24,7 +24,7 @@ export async function redeemPermission(
   sessionPrivateKey: string,
   recipient: string,
   amount: string,
-  permissionType: 'native-token-periodic' | 'erc20-token-periodic',
+  permissionType: 'native-token-periodic' | 'erc20-token-periodic' | 'native-token-stream' | 'erc20-token-stream',
   tokenAddress?: string,
   tokenDecimals?: number,
 ) {
@@ -59,7 +59,7 @@ export async function redeemPermission(
 
   // Step 3: Build the execution based on token type
   let execution;
-  const isNative = permissionType === 'native-token-periodic';
+  const isNative = permissionType === 'native-token-periodic' || permissionType === 'native-token-stream';
 
   if (isNative) {
     // For native ETH: send ETH directly to recipient

@@ -195,6 +195,18 @@ button {
   width: 100%;
 }
 
+/* Strip gradient for permission mode buttons - let inline styles through */
+.permission-mode-button {
+  background: unset;
+  background-image: none;
+  width: auto;
+}
+
+.permission-mode-button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
 button:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
@@ -289,6 +301,9 @@ button:disabled {
 /* Wallet Connection Styles - Top Right */
 .wallet-connection-top-right {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .wallet-connect-btn {

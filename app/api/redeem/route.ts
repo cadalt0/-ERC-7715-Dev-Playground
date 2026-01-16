@@ -17,6 +17,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate permission type
+    const validPermissionTypes = ['native-token-periodic', 'erc20-token-periodic', 'native-token-stream', 'erc20-token-stream'];
+    if (!validPermissionTypes.includes(permissionType)) {
+      return NextResponse.json(
+        { error: `Invalid permissionType. Must be one of: ${validPermissionTypes.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
     // Get session key from server environment (more secure - not exposed to frontend)
     const serverSessionKey = process.env.SESSION_PRIVATE_KEY;
     if (!serverSessionKey) {

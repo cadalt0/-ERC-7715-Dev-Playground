@@ -2,15 +2,28 @@
  * Types for ERC-7715 Permission Requests
  */
 
-export type PermissionType = 'native-token-periodic' | 'erc20-token-periodic';
+export type PermissionType = 
+  | 'native-token-periodic' 
+  | 'erc20-token-periodic'
+  | 'native-token-stream'
+  | 'erc20-token-stream';
 
 export interface PermissionConfig {
   permissionType: PermissionType;
   tokenAddress?: string; // Only for ERC-20 tokens
-  amount: string;
+  
+  // Periodic permission fields
+  amount?: string; // periodAmount for periodic permissions
+  periodDuration?: number; // in seconds (for periodic)
+  
+  // Stream permission fields
+  amountPerSecond?: string; // For stream permissions
+  initialAmount?: string; // For stream permissions
+  maxAmount?: string; // For stream permissions
+  
+  // Common fields
   tokenDecimals: number;
-  periodDuration: number; // in seconds
-  startTime?: number; // Unix timestamp in seconds (for native token periodic)
+  startTime?: number; // Unix timestamp in seconds (for both native periodic and stream)
   expiry: number; // Unix timestamp in seconds
   justification: string;
   isAdjustmentAllowed: boolean;

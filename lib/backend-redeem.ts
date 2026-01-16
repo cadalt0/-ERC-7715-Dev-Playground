@@ -8,7 +8,7 @@ export interface RedeemRequest {
   delegationManager: string;
   recipient: string;
   amount: string;
-  permissionType: 'native-token-periodic' | 'erc20-token-periodic';
+  permissionType: 'native-token-periodic' | 'erc20-token-periodic' | 'native-token-stream' | 'erc20-token-stream';
   tokenAddress?: string;
   tokenDecimals?: number;
   // Note: sessionPrivateKey is NOT sent from frontend - backend uses its own from env
@@ -31,7 +31,7 @@ export async function redeemPermissionViaBackend(
   delegationManager: string,
   recipient: string,
   amount: string,
-  permissionType: 'native-token-periodic' | 'erc20-token-periodic',
+  permissionType: 'native-token-periodic' | 'erc20-token-periodic' | 'native-token-stream' | 'erc20-token-stream',
   tokenAddress?: string,
   tokenDecimals?: number,
 ): Promise<RedeemResponse> {

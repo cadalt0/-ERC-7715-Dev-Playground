@@ -40,6 +40,9 @@ export default function PermissionDetailsBox({
     ? `${config.tokenAddress.slice(0, 6)}...${config.tokenAddress.slice(-4)}`
     : 'ETH';
 
+  const isPeriodic = config.permissionType === 'native-token-periodic' || config.permissionType === 'erc20-token-periodic';
+  const isStream = config.permissionType === 'native-token-stream' || config.permissionType === 'erc20-token-stream';
+
   return (
     <>
       <div
@@ -68,13 +71,25 @@ export default function PermissionDetailsBox({
           <div style={{ fontSize: '1.5rem' }}>✅</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: '600', color: '#667eea', fontSize: '0.95rem', marginBottom: '0.25rem' }}>
-              Permission Granted
+              Permission Granted {isPeriodic ? '(Periodic)' : '(Stream)'}
             </div>
             <div style={{ fontSize: '0.85rem', color: '#666', lineHeight: '1.4' }}>
-              <div>{config.amount} {tokenDisplay}</div>
-              <div style={{ marginTop: '0.125rem' }}>
-                Every {formatDuration(config.periodDuration)} • Expires {new Date(config.expiry * 1000).toLocaleDateString()}
-              </div>
+              {isPeriodic && (
+                <>
+                  <div>{config.amount} {tokenDisplay}</div>
+                  <div style={{ marginTop: '0.125rem' }}>
+                    Every {formatDuration(config.periodDuration!)} • Expires {new Date(config.expiry * 1000).toLocaleDateString()}
+                  </div>
+                </>
+              )}
+              {isStream && (
+                <>
+                  <div>{config.amountPerSecond} {tokenDisplay}/sec • Max: {config.maxAmount} {tokenDisplay}</div>
+                  <div style={{ marginTop: '0.125rem' }}>
+                    Initial: {config.initialAmount} {tokenDisplay} • Expires {new Date(config.expiry * 1000).toLocaleDateString()}
+                  </div>
+                </>
+              )}
             </div>
           </div>
           <div style={{ color: '#667eea', fontSize: '1.25rem' }}>→</div>
