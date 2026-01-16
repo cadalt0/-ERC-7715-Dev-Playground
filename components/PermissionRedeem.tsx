@@ -42,9 +42,14 @@ export default function PermissionRedeem({
   const isPeriodic = permissionConfig.permissionType.includes('periodic');
   const isStream = permissionConfig.permissionType.includes('stream');
   
-  // For periodic, use fixed amount. For stream, user must input amount
-  const defaultAmount = isPeriodic ? permissionConfig.amount : '';
-  const amount = customAmount || defaultAmount;
+  // For periodic, use fixed amount. For stream, user must input amount; ensure we always have a string for validation.
+  const defaultAmount = isPeriodic ? (permissionConfig.amount ?? '') : '';
+  const amount = customAmount
+    || defaultAmount
+    || permissionConfig.maxAmount
+    || permissionConfig.initialAmount
+    || permissionConfig.amountPerSecond
+    || '';
   
   // Calculate accrued amount for stream permissions
   const calculateAccruedAmount = () => {
@@ -105,6 +110,11 @@ export default function PermissionRedeem({
       if (!confirmed) {
         return;
       }
+    }
+
+    if (!amount || parseFloat(amount) <= 0) {
+      onStatusChange({ type: 'error', message: 'Invalid amount to redeem. Please enter a valid amount.' });
+      return;
     }
 
     setRedeeming(true);
